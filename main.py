@@ -13,11 +13,11 @@ class VideoDownloaderApp:
         self.master = master
         master.title("Vimeo Video Downloader")
 
-        self.url_label = tk.Label(master, text="")
-        self.url_label.pack(pady=50)
+        self.label_empty = tk.Label(master, text="")
+        self.label_empty.pack(pady=50)
 
-        self.url_label = tk.Label(master, text="Enter Vimeo Video URL:")
-        self.url_label.pack(padx=10, pady=10)
+        self.url_label_text = tk.Label(master, text="Enter Vimeo Video URL:")
+        self.url_label_text.pack(padx=10, pady=10)
 
         self.url_entry = tk.Entry(master, width=50)
         self.url_entry.pack(padx=10, pady=10)
@@ -38,7 +38,7 @@ class VideoDownloaderApp:
         menu.tk_popup(event.x_root, event.y_root)
 
     def process_video(self):
-        url = self.url_entry.get()
+        url = self.url_entry.get().strip()
         startwith = url.startswith('https://vimeo.com/')
         if url and startwith:
             if url and not self.downloading:  # Check if URL is valid and no download in progress
@@ -70,7 +70,7 @@ class VideoDownloaderApp:
 
         video_id = url.split('/')[-1]
         response = requests.get(f"https://vimeo.com/api/v2/video/{video_id}.json")
-        if response.status_code == 200:
+        if response.status_code == 200 and response.headers['Content-Type'] == 'application/json':
             video_data = response.json()[0]
             video_title = video_data['title']
             success_window.title("Vimeo Video Download")
@@ -106,89 +106,101 @@ class VideoDownloaderApp:
             retry = tk.Button(success_window, text="Retry", bg="red", fg="white", command=lambda: self.retry(success_window))
             retry.pack()
 
-
     def retry(self, success_window):
         success_window.destroy()  # Close the success window
         self.master.deiconify()   # Show the master window
 
-
-       
-    def get_vimeo_thumbnail(self, video_url):
-        video_id = video_url.split('/')[-1]
+    def get_vimeo_thumbnail(self, url):
+        video_id = url.split('/')[-1]
         response = requests.get(f"https://vimeo.com/api/v2/video/{video_id}.json")
 
-        if response.status_code == 200:
+        if response.status_code == 200 and response.headers['Content-Type'] == 'application/json':
             video_data = response.json()
             thumbnail_url = video_data[0]['thumbnail_large']
             return thumbnail_url
         else:
-            print(f"Failed to fetch thumbnail for video: {video_url}")
-            messagebox.showerror("Error","Failed to fetch thumbnail for this URL: {video_url}")
+            print(f"Failed to fetch thumbnail for video: {url}")
+            messagebox.showerror("Error", f"Failed to fetch thumbnail for this URL: {url}")
             return None
 
-    def get_available_resolutions(self, video_url):
-        v = Vimeo(video_url)
-        video_formats = v.streams
-        resolutions = [stream.quality for stream in video_formats]
-        print("These are the available video formats:")
-        for stream in video_formats:
-            print(stream.quality)
-        return resolutions
+    def get_available_resolutions(self, url):
+        try:
+            v = Vimeo(url)
+            video_formats = v.streams
+            resolutions = [stream.quality for stream in video_formats]
+            print("These are the available video formats:")
+            for stream in video_formats:
+                print(stream.quality)
+            return resolutions
+        except Exception as e:
+            messagebox.showerror("Error", f"Unable to retrieve download links: {str(e)}")
 
-    def download_video(self, video_url, success_window):
-        self.downloading = True  # Set downloading flag to True
-        self.process_button.config(state='disabled')  # Disable the download button
+    def download_video(self, url, success_window):
+        if not self.downloading == True:
+            self.downloading = True  # Set downloading flag to True
+            self.process_button.config(state='disabled')  # Disable the download button
 
-        download_thread = threading.Thread(target=self.download_video_thread, args=(video_url, success_window))
-        download_thread.start()
-
-    def download_video_thread(self, video_url, success_window):
-        v = Vimeo(video_url)
-        video_formats = v.streams
-
-        # Get selected resolution
-        chosen_format = self.resolution_var.get()
-        print("Choosen video format:", chosen_format)
-
-        # Choose the highest available quality if no resolution selected
-        if not chosen_format:
-            chosen_format = video_formats[-1].quality if video_formats else None
-            
-        # Download the video
-        chosen_stream = next((stream for stream in video_formats if stream.quality == chosen_format), None)
-        if chosen_stream:
-            # Create a label for download video status
-            self.downloadstatus = tk.Label(success_window, fg="green", text="Downloading...")
-            self.downloadstatus.pack(pady=10)
-
-            # Create progress bar
-            self.progress_bar = ttk.Progressbar(success_window, mode='determinate')
-            self.progress_bar.pack()
-
-            self.progress_bar.start()  # Start the progress bar
-            file_path = chosen_stream.download()
-            self.progress_bar.stop()  # Stop the progress bar
-            self.progress_bar.pack_forget()  # Hide the progress bar
-            self.downloadstatus.pack_forget() # Hide the download status
-            print("Video downloaded successfully!")
-            # Append chosen format to the file name
-            file_name, file_extension = os.path.splitext(file_path)
-            new_file_path = f"{file_name}_{chosen_format}{file_extension}"
-            # Check if the file already exists
-            if os.path.exists(new_file_path):
-                # If the file exists, overwrite it
-                os.replace(file_path, new_file_path)
-            else:
-                # If the file doesn't exist, rename it
-                os.rename(file_path, new_file_path)
-            messagebox.showinfo("Download Successful", "Video downloaded successfully!")
-            self.master.deiconify()  # Show the main window again after download
-            self.process_button.config(state='normal')
-            # Hide the success window and destroy it
-            success_window.destroy()
+            download_thread = threading.Thread(target=self.download_video_thread, args=(url, success_window))
+            download_thread.start()
         else:
-            messagebox.showerror("Error", "Error in video download or video resolution not available for this video")
-            success_window.destroy()
+            messagebox.showwarning("Downloading video","video download in progress please wait....")
+
+    def download_video_thread(self, url, success_window):
+        try:
+            v = Vimeo(url)
+            video_formats = v.streams
+
+            # Get selected resolution
+            chosen_format = self.resolution_var.get()
+            print("Choosen video format:", chosen_format)
+
+            # Choose the highest available quality if no resolution selected
+            if not chosen_format:
+                chosen_format = video_formats[-1].quality if video_formats else None
+                
+            # Download the video
+            chosen_stream = next((stream for stream in video_formats if stream.quality == chosen_format), None)
+            if chosen_stream:
+                try:
+                    # Create a label for download video status
+                    self.downloadstatus = tk.Label(success_window, fg="green", text="Downloading...")
+                    self.downloadstatus.pack(pady=10)
+
+                    # Create progress bar
+                    self.progress_bar = ttk.Progressbar(success_window, mode='determinate')
+                    self.progress_bar.pack()
+            
+                    self.progress_bar.start()  # Start the progress bar
+                    file_path = chosen_stream.download()
+                    self.progress_bar.stop()  # Stop the progress bar
+                    self.progress_bar.pack_forget()  # Hide the progress bar
+                    self.downloadstatus.pack_forget() # Hide the download status
+                    print("Video downloaded successfully!")
+                    # Append chosen format to the file name
+                    file_name, file_extension = os.path.splitext(file_path)
+                    new_file_path = f"{file_name}_{chosen_format}{file_extension}"
+                    # Check if the file already exists
+                    if os.path.exists(new_file_path):
+                        # If the file exists, overwrite it
+                        os.replace(file_path, new_file_path)
+                    else:
+                        # If the file doesn't exist, rename it
+                        os.rename(file_path, new_file_path)
+                    messagebox.showinfo("Download Successful", "Video downloaded successfully!")
+                    self.master.deiconify()  # Show the main window again after download
+                    self.process_button.config(state='normal')
+                    # Hide the success window and destroy it
+                    success_window.destroy()
+                except Exception as e:
+                    messagebox.showerror("Error", f"Unable to download: {str(e)}")
+                    self.master.deiconify()  # Show the main window again after download
+                    success_window.destroy()
+            else:
+                messagebox.showerror("Error", "Error in video download or video resolution not available for this video")
+                success_window.destroy()
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Unable to retrieve download links or error due to so many requests please try again later: {str(e)}")
         # Reset downloading flag after download completes
         self.downloading = False
 
